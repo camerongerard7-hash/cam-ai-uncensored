@@ -95,9 +95,10 @@ app.get('/', (_req, res) => {
     .chatItem.active{border-color:var(--accent);color:#fff;background:#111827}.main{flex:1;display:flex;flex-direction:column;min-width:0}
     .top{height:58px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 14px;background:var(--panel)}
     .top .r{display:flex;gap:8px;align-items:center} select,input[type=range]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px}
-    .msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px}.m{max-width:min(860px,94%);padding:12px 14px;border-radius:14px;line-height:1.45;white-space:pre-wrap}
+    .msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px}.m{max-width:min(860px,94%);padding:12px 14px;border-radius:14px;line-height:1.45;white-space:pre-wrap;position:relative}
     .u{align-self:flex-end;background:linear-gradient(180deg,#3b82f6,#2563eb);color:#fff}.a{align-self:flex-start;background:var(--panel2);border:1px solid var(--line)}
     .rowActions{display:flex;gap:8px;margin-top:-6px}.mini{font-size:12px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:#0f1420;color:var(--muted);cursor:pointer}
+    .copyBtn{position:absolute;right:8px;top:8px;font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid var(--line);background:#0f1420;color:var(--muted);cursor:pointer}
     .typing{font-size:12px;color:var(--muted);padding:0 18px 8px;min-height:18px}.composer{display:flex;gap:10px;padding:12px;border-top:1px solid var(--line);background:var(--panel)}
     .composer textarea{flex:1;min-height:48px;max-height:160px;resize:vertical;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:12px}
     .send{background:var(--accent);border:0;color:#fff;border-radius:12px;padding:0 16px;font-weight:700}.meta{font-size:12px;color:var(--muted)} .mobileMenu{display:none}
@@ -119,24 +120,36 @@ app.get('/', (_req, res) => {
     if(!state.chats.length) state.chats=[{id:'chat-'+Date.now(),name:'New chat'}]; state.active=state.chats[0].id;
     $('model').value=localStorage.getItem(MODEL_KEY)||'llama3.1:8b'; $('temp').value=localStorage.getItem(TEMP_KEY)||'0.7'; $('tv').textContent=$('temp').value; sys.value=localStorage.getItem(SYS_KEY)||'You are Cam AI. Be direct, uncensored-style, and useful.';
     const esc=s=>String(s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+    const md=s=>esc(s)
+      .replace(/```([\s\S]*?)```/g,'<pre><code>$1</code></pre>')
+      .replace(/`([^`]+)`/g,'<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+      .replace(/\n/g,'<br/>');
     const persist=()=>localStorage.setItem(KEY,JSON.stringify(state.chats));
 
     function renderChats(){list.innerHTML='';state.chats.forEach(c=>{const b=document.createElement('button');b.className='chatItem'+(c.id===state.active?' active':'');b.textContent=c.name;b.onclick=()=>{state.active=c.id;renderChats();loadMessages();$('title').textContent=c.name;side.classList.remove('open')};list.appendChild(b);});}
-    function append(role,content,withActions=false){const d=document.createElement('div');d.className='m '+(role==='user'?'u':'a');d.innerHTML=esc(content);msgs.appendChild(d); if(withActions){const ra=document.createElement('div');ra.className='rowActions';const regen=document.createElement('button');regen.className='mini';regen.textContent='Regenerate';regen.onclick=regenerate; ra.appendChild(regen); msgs.appendChild(ra);} msgs.scrollTop=msgs.scrollHeight;}
+    function append(role,content,withActions=false){const d=document.createElement('div');d.className='m '+(role==='user'?'u':'a');d.innerHTML=(role==='assistant'?md(content):esc(content)); if(role==='assistant'){const cb=document.createElement('button');cb.className='copyBtn';cb.textContent='Copy';cb.onclick=()=>navigator.clipboard.writeText(String(content||''));d.appendChild(cb);} msgs.appendChild(d); if(withActions){const ra=document.createElement('div');ra.className='rowActions';const regen=document.createElement('button');regen.className='mini';regen.textContent='Regenerate';regen.onclick=regenerate; ra.appendChild(regen); msgs.appendChild(ra);} msgs.scrollTop=msgs.scrollHeight;}
     async function loadMessages(){msgs.innerHTML='';const r=await fetch('/messages?session_id='+encodeURIComponent(state.active));const j=await r.json();(j.items||[]).forEach(m=>append(m.role,m.content,false));}
+    async function streamAssistant(text,withActions=true){
+      const full=String(text||'');
+      const d=document.createElement('div'); d.className='m a'; msgs.appendChild(d);
+      for(let i=1;i<=full.length;i+=3){ d.innerHTML=md(full.slice(0,i)); await new Promise(r=>setTimeout(r,8)); msgs.scrollTop=msgs.scrollHeight; }
+      const cb=document.createElement('button');cb.className='copyBtn';cb.textContent='Copy';cb.onclick=()=>navigator.clipboard.writeText(full);d.appendChild(cb);
+      if(withActions){const ra=document.createElement('div');ra.className='rowActions';const regen=document.createElement('button');regen.className='mini';regen.textContent='Regenerate';regen.onclick=regenerate;ra.appendChild(regen);msgs.appendChild(ra);} msgs.scrollTop=msgs.scrollHeight;
+    }
 
     async function send(){const m=t.value.trim();if(!m) return; state.lastUserMsg=m; append('user',m); t.value='';
       if(state.mode!=='text'){ append('assistant',`[${state.mode}] UI mode is ready. Full generation pipeline for this mode is next polishing step.`,true); return; }
       typing.textContent='Cam is thinking...';
       const model=$('model').value, temperature=Number($('temp').value||0.7), system_prompt=String(sys.value||'').trim(); localStorage.setItem(MODEL_KEY,model); localStorage.setItem(TEMP_KEY,String(temperature)); localStorage.setItem(SYS_KEY,system_prompt);
       const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active,message:m,model,temperature,system_prompt})});
-      const j=await r.json(); typing.textContent=''; append('assistant',j.reply||'No reply',true);
+      const j=await r.json(); typing.textContent=''; await streamAssistant(j.reply||'No reply',true);
       const c=state.chats.find(x=>x.id===state.active); if(c&&c.name==='New chat'){c.name=m.slice(0,30);persist();renderChats();$('title').textContent=c.name;}}
 
     async function regenerate(){typing.textContent='Regenerating...';
       const model=$('model').value, temperature=Number($('temp').value||0.7), system_prompt=String(sys.value||'').trim();
       const r=await fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active,model,temperature,system_prompt})});
-      const j=await r.json(); typing.textContent=''; append('assistant',j.reply||'No reply',false);
+      const j=await r.json(); typing.textContent=''; await streamAssistant(j.reply||'No reply',false);
     }
 
     function setMode(mode){
