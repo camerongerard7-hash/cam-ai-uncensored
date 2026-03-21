@@ -47,6 +47,13 @@ app.get('/messages', (req, res) => {
   res.json({ items: rows });
 });
 
+app.post('/clear-session', (req, res) => {
+  const { session_id = 'default' } = req.body || {};
+  const rows = load().filter(r => r.session_id !== session_id);
+  save(rows);
+  res.json({ ok: true });
+});
+
 app.post('/regenerate', async (req, res) => {
   const { session_id = 'default', model = OLLAMA_MODEL, temperature = 0.7, system_prompt = DEFAULT_SYSTEM_PROMPT } = req.body || {};
   const rows = load();
@@ -104,7 +111,7 @@ app.get('/', (_req, res) => {
     .send{background:var(--accent);border:0;color:#fff;border-radius:12px;padding:0 16px;font-weight:700}.meta{font-size:12px;color:var(--muted)} .mobileMenu{display:none}
     @media (max-width:860px){.side{position:fixed;z-index:5;left:-300px;top:0;bottom:0;transition:.2s}.side.open{left:0}.mobileMenu{display:inline-block}}
   </style></head><body>
-  <div class="app"><aside id="side" class="side"><div class="brand">Cam AI</div><button id="newChat" class="btn">＋ New chat</button><div id="chatList" class="chats"></div><div class="meta">Clone-style UI • polished</div></aside>
+  <div class="app"><aside id="side" class="side"><div class="brand">Cam AI</div><button id="newChat" class="btn">＋ New chat</button><div style="display:flex;gap:8px"><button id="renameChat" class="mini">Rename</button><button id="clearChat" class="mini">Clear</button><button id="exportChat" class="mini">Export</button></div><div id="chatList" class="chats"></div><div class="meta">Clone-style UI • polished</div></aside>
   <main class="main"><div class="top"><div><button id="menu" class="btn mobileMenu">☰</button> <strong id="title">New chat</strong></div><div class="r">
   <select id="model"><option value="llama3.1:8b">llama3.1:8b</option><option value="llama3.1:70b">llama3.1:70b</option><option value="mistral">mistral</option><option value="mixtral">mixtral</option><option value="qwen2.5">qwen2.5</option><option value="dolphin-mistral">dolphin-mistral</option><option value="hermes3">hermes3</option></select>
   <label class="meta">temp <span id="tv">0.7</span></label><input id="temp" type="range" min="0" max="1.2" step="0.1" value="0.7" /></div></div>
@@ -162,6 +169,9 @@ app.get('/', (_req, res) => {
 
     $('send').onclick=send; t.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
     $('newChat').onclick=()=>{const c={id:'chat-'+Date.now(),name:'New chat'};state.chats.unshift(c);state.active=c.id;persist();renderChats();loadMessages();$('title').textContent='New chat'};
+    $('renameChat').onclick=()=>{const c=state.chats.find(x=>x.id===state.active); if(!c) return; const n=prompt('Rename chat',c.name||''); if(!n) return; c.name=n.slice(0,40); persist(); renderChats(); $('title').textContent=c.name;};
+    $('clearChat').onclick=async()=>{if(!confirm('Clear this chat history?')) return; await fetch('/clear-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active})}); await loadMessages();};
+    $('exportChat').onclick=async()=>{const r=await fetch('/messages?session_id='+encodeURIComponent(state.active));const j=await r.json();const txt=(j.items||[]).map(m=>`[${new Date(m.ts||Date.now()).toISOString()}] ${m.role}: ${m.content}`).join('\n\n'); const blob=new Blob([txt],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(state.chats.find(c=>c.id===state.active)?.name||'chat')+'.txt'; a.click();};
     $('temp').oninput=e=>$('tv').textContent=e.target.value; $('menu').onclick=()=>side.classList.toggle('open');
     $('tabText').onclick=()=>setMode('text'); $('tabImages').onclick=()=>setMode('images'); $('tabCode').onclick=()=>setMode('code'); $('tabCharacters').onclick=()=>setMode('characters');
     renderChats(); loadMessages(); $('title').textContent='New chat'; setMode('text');
