@@ -107,12 +107,15 @@ app.get('/', (_req, res) => {
   <main class="main"><div class="top"><div><button id="menu" class="btn mobileMenu">☰</button> <strong id="title">New chat</strong></div><div class="r">
   <select id="model"><option value="llama3.1:8b">llama3.1:8b</option><option value="llama3.1:70b">llama3.1:70b</option><option value="mistral">mistral</option><option value="mixtral">mixtral</option><option value="qwen2.5">qwen2.5</option><option value="dolphin-mistral">dolphin-mistral</option><option value="hermes3">hermes3</option></select>
   <label class="meta">temp <span id="tv">0.7</span></label><input id="temp" type="range" min="0" max="1.2" step="0.1" value="0.7" /></div></div>
+  <div style="display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)">
+    <button class="mini" id="tabText">Text</button><button class="mini" id="tabImages">Images</button><button class="mini" id="tabCode">Code</button><button class="mini" id="tabCharacters">Characters</button>
+  </div>
   <section id="msgs" class="msgs"></section><div class="typing" id="typing"></div>
   <div class="composer"><textarea id="sys" placeholder="System prompt (optional, uncensored style etc.)"></textarea><textarea id="t" placeholder="Message Cam AI..."></textarea><button id="send" class="send">Send</button></div></main></div>
   <script>
     const $=id=>document.getElementById(id), side=$('side'), list=$('chatList'), msgs=$('msgs'), t=$('t'), sys=$('sys'), typing=$('typing');
     const KEY='camai_chats_v2', MODEL_KEY='camai_model', TEMP_KEY='camai_temp', SYS_KEY='camai_sys';
-    const state={chats:JSON.parse(localStorage.getItem(KEY)||'[]'),active:null,lastUserMsg:''};
+    const state={chats:JSON.parse(localStorage.getItem(KEY)||'[]'),active:null,lastUserMsg:'',mode:'text'};
     if(!state.chats.length) state.chats=[{id:'chat-'+Date.now(),name:'New chat'}]; state.active=state.chats[0].id;
     $('model').value=localStorage.getItem(MODEL_KEY)||'llama3.1:8b'; $('temp').value=localStorage.getItem(TEMP_KEY)||'0.7'; $('tv').textContent=$('temp').value; sys.value=localStorage.getItem(SYS_KEY)||'You are Cam AI. Be direct, uncensored-style, and useful.';
     const esc=s=>String(s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
@@ -122,7 +125,9 @@ app.get('/', (_req, res) => {
     function append(role,content,withActions=false){const d=document.createElement('div');d.className='m '+(role==='user'?'u':'a');d.innerHTML=esc(content);msgs.appendChild(d); if(withActions){const ra=document.createElement('div');ra.className='rowActions';const regen=document.createElement('button');regen.className='mini';regen.textContent='Regenerate';regen.onclick=regenerate; ra.appendChild(regen); msgs.appendChild(ra);} msgs.scrollTop=msgs.scrollHeight;}
     async function loadMessages(){msgs.innerHTML='';const r=await fetch('/messages?session_id='+encodeURIComponent(state.active));const j=await r.json();(j.items||[]).forEach(m=>append(m.role,m.content,false));}
 
-    async function send(){const m=t.value.trim();if(!m) return; state.lastUserMsg=m; append('user',m); t.value=''; typing.textContent='Cam is thinking...';
+    async function send(){const m=t.value.trim();if(!m) return; state.lastUserMsg=m; append('user',m); t.value='';
+      if(state.mode!=='text'){ append('assistant',`[${state.mode}] UI mode is ready. Full generation pipeline for this mode is next polishing step.`,true); return; }
+      typing.textContent='Cam is thinking...';
       const model=$('model').value, temperature=Number($('temp').value||0.7), system_prompt=String(sys.value||'').trim(); localStorage.setItem(MODEL_KEY,model); localStorage.setItem(TEMP_KEY,String(temperature)); localStorage.setItem(SYS_KEY,system_prompt);
       const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active,message:m,model,temperature,system_prompt})});
       const j=await r.json(); typing.textContent=''; append('assistant',j.reply||'No reply',true);
@@ -134,10 +139,19 @@ app.get('/', (_req, res) => {
       const j=await r.json(); typing.textContent=''; append('assistant',j.reply||'No reply',false);
     }
 
+    function setMode(mode){
+      state.mode=mode;
+      ['tabText','tabImages','tabCode','tabCharacters'].forEach(id=>$(id).style.borderColor='var(--line)');
+      const idMap={text:'tabText',images:'tabImages',code:'tabCode',characters:'tabCharacters'};
+      $(idMap[mode]).style.borderColor='var(--accent)';
+      t.placeholder = mode==='text' ? 'Message Cam AI...' : `(${mode} mode) feature UI cloned, backend generation pending next pass...`;
+    }
+
     $('send').onclick=send; t.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
     $('newChat').onclick=()=>{const c={id:'chat-'+Date.now(),name:'New chat'};state.chats.unshift(c);state.active=c.id;persist();renderChats();loadMessages();$('title').textContent='New chat'};
     $('temp').oninput=e=>$('tv').textContent=e.target.value; $('menu').onclick=()=>side.classList.toggle('open');
-    renderChats(); loadMessages(); $('title').textContent='New chat';
+    $('tabText').onclick=()=>setMode('text'); $('tabImages').onclick=()=>setMode('images'); $('tabCode').onclick=()=>setMode('code'); $('tabCharacters').onclick=()=>setMode('characters');
+    renderChats(); loadMessages(); $('title').textContent='New chat'; setMode('text');
   </script>
 </body></html>`);
 });
