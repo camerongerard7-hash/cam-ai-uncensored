@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Cam AI Uncensored",
+    "slug": "cam-ai-uncensored",
+    "scheme": "camai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "ios": {
+      "supportsTablet": true
+    },
+    "plugins": ["expo-router"]
+  }
+}

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: cam-ai-uncensored-api
+    env: node
+    rootDir: apps/api
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: OLLAMA_URL
+        value: https://example-ollama-endpoint
+      - key: OLLAMA_MODEL
+        value: llama3.1:8b
