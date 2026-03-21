@@ -119,7 +119,7 @@ app.get('/', (_req, res) => {
     <button class="mini" id="tabText">Text</button><button class="mini" id="tabImages">Images</button><button class="mini" id="tabCode">Code</button><button class="mini" id="tabCharacters">Characters</button>
   </div>
   <section id="msgs" class="msgs"></section><div class="typing" id="typing"></div>
-  <div class="composer"><textarea id="sys" placeholder="System prompt (optional, uncensored style etc.)"></textarea><textarea id="t" placeholder="Message Cam AI..."></textarea><button id="send" class="send">Send</button></div></main></div>
+  <div class="composer"><input id="attach" type="file" style="display:none" /><button id="attachBtn" class="mini">Attach</button><textarea id="sys" placeholder="System prompt (optional, uncensored style etc.)"></textarea><textarea id="t" placeholder="Message Cam AI..."></textarea><button id="send" class="send">Send</button></div></main></div>
   <script>
     const $=id=>document.getElementById(id), side=$('side'), list=$('chatList'), msgs=$('msgs'), t=$('t'), sys=$('sys'), typing=$('typing');
     const KEY='camai_chats_v2', MODEL_KEY='camai_model', TEMP_KEY='camai_temp', SYS_KEY='camai_sys';
@@ -168,6 +168,8 @@ app.get('/', (_req, res) => {
     }
 
     $('send').onclick=send; t.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
+    $('attachBtn').onclick=()=>$('attach').click();
+    $('attach').onchange=e=>{const f=e.target.files&&e.target.files[0]; if(!f) return; append('assistant','Attachment UI ready: '+f.name+' ('+Math.round(f.size/1024)+'KB). Processing pipeline next.',false); e.target.value='';};
     $('newChat').onclick=()=>{const c={id:'chat-'+Date.now(),name:'New chat'};state.chats.unshift(c);state.active=c.id;persist();renderChats();loadMessages();$('title').textContent='New chat'};
     $('renameChat').onclick=()=>{const c=state.chats.find(x=>x.id===state.active); if(!c) return; const n=prompt('Rename chat',c.name||''); if(!n) return; c.name=n.slice(0,40); persist(); renderChats(); $('title').textContent=c.name;};
     $('clearChat').onclick=async()=>{if(!confirm('Clear this chat history?')) return; await fetch('/clear-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active})}); await loadMessages();};
