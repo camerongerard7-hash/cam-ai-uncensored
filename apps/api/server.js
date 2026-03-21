@@ -146,7 +146,7 @@ app.get('/', (_req, res) => {
     }
 
     async function send(){const m=t.value.trim();if(!m) return; state.lastUserMsg=m; append('user',m); t.value='';
-      if(state.mode!=='text'){ append('assistant',`[${state.mode}] UI mode is ready. Full generation pipeline for this mode is next polishing step.`,true); return; }
+      if(state.mode!=='text'){ append('assistant','['+state.mode+'] UI mode is ready. Full generation pipeline for this mode is next polishing step.',true); return; }
       typing.textContent='Cam is thinking...';
       const model=$('model').value, temperature=Number($('temp').value||0.7), system_prompt=String(sys.value||'').trim(); localStorage.setItem(MODEL_KEY,model); localStorage.setItem(TEMP_KEY,String(temperature)); localStorage.setItem(SYS_KEY,system_prompt);
       const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active,message:m,model,temperature,system_prompt})});
@@ -164,7 +164,7 @@ app.get('/', (_req, res) => {
       ['tabText','tabImages','tabCode','tabCharacters'].forEach(id=>$(id).style.borderColor='var(--line)');
       const idMap={text:'tabText',images:'tabImages',code:'tabCode',characters:'tabCharacters'};
       $(idMap[mode]).style.borderColor='var(--accent)';
-      t.placeholder = mode==='text' ? 'Message Cam AI...' : `(${mode} mode) feature UI cloned, backend generation pending next pass...`;
+      t.placeholder = mode==='text' ? 'Message Cam AI...' : '('+mode+' mode) feature UI cloned, backend generation pending next pass...';
     }
 
     $('send').onclick=send; t.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
