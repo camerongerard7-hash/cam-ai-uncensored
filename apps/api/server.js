@@ -112,13 +112,15 @@ app.get('/', (_req, res) => {
     @media (max-width:860px){.side{position:fixed;z-index:5;left:-300px;top:0;bottom:0;transition:.2s}.side.open{left:0}.mobileMenu{display:inline-block}}
   </style></head><body>
   <div class="app"><aside id="side" class="side"><div class="brand">Cam AI</div><button id="newChat" class="btn">＋ New chat</button><input id="searchChats" class="btn" placeholder="Search chats..." style="cursor:text" /><div style="display:flex;gap:8px"><button id="renameChat" class="mini">Rename</button><button id="clearChat" class="mini">Clear</button><button id="exportChat" class="mini">Export</button></div><div id="chatList" class="chats"></div><div class="meta">Clone-style UI • polished</div></aside>
-  <main class="main"><div class="top"><div><button id="menu" class="btn mobileMenu">☰</button> <strong id="title">New chat</strong></div><div class="r">
+  <main class="main"><div class="top"><div><button id="menu" class="btn mobileMenu">☰</button> <strong id="title">New chat</strong></div><div class="r"><button id="openSettings" class="mini">Settings</button>
   <select id="model"><option value="llama3.1:8b">llama3.1:8b</option><option value="llama3.1:70b">llama3.1:70b</option><option value="mistral">mistral</option><option value="mixtral">mixtral</option><option value="qwen2.5">qwen2.5</option><option value="dolphin-mistral">dolphin-mistral</option><option value="hermes3">hermes3</option></select>
   <label class="meta">temp <span id="tv">0.7</span></label><input id="temp" type="range" min="0" max="1.2" step="0.1" value="0.7" /></div></div>
   <div style="display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)">
     <button class="mini" id="tabText">Text</button><button class="mini" id="tabImages">Images</button><button class="mini" id="tabCode">Code</button><button class="mini" id="tabCharacters">Characters</button>
   </div>
+  <div id="imagePanel" style="display:none;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)"><div class="meta" style="margin-bottom:8px">Image Generation</div><div style="display:flex;gap:8px"><input id="imgPrompt" class="btn" placeholder="Describe image..." style="flex:1;cursor:text" /><button id="genImage" class="mini">Generate</button></div></div>
   <section id="msgs" class="msgs"></section><div class="typing" id="typing"></div>
+  <div id="settingsDrawer" style="display:none;position:fixed;right:12px;top:64px;width:min(92vw,360px);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;z-index:9"><div style="display:flex;justify-content:space-between;align-items:center"><strong>Settings</strong><button id="closeSettings" class="mini">Close</button></div><div class="meta" style="margin-top:8px">Tune models, prompts, and generation behavior.</div></div>
   <div class="composer"><input id="attach" type="file" style="display:none" /><button id="attachBtn" class="mini">Attach</button><textarea id="sys" placeholder="System prompt (optional, uncensored style etc.)"></textarea><textarea id="t" placeholder="Message Cam AI..."></textarea><button id="send" class="send">Send</button></div></main></div>
   <script>
     const $=id=>document.getElementById(id), side=$('side'), list=$('chatList'), msgs=$('msgs'), t=$('t'), sys=$('sys'), typing=$('typing');
@@ -164,12 +166,16 @@ app.get('/', (_req, res) => {
       ['tabText','tabImages','tabCode','tabCharacters'].forEach(id=>$(id).style.borderColor='var(--line)');
       const idMap={text:'tabText',images:'tabImages',code:'tabCode',characters:'tabCharacters'};
       $(idMap[mode]).style.borderColor='var(--accent)';
+      $('imagePanel').style.display = mode==='images' ? 'block' : 'none';
       t.placeholder = mode==='text' ? 'Message Cam AI...' : '('+mode+' mode) feature UI cloned, backend generation pending next pass...';
     }
 
     $('send').onclick=send; t.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
     $('attachBtn').onclick=()=>$('attach').click();
     $('attach').onchange=e=>{const f=e.target.files&&e.target.files[0]; if(!f) return; append('assistant','Attachment UI ready: '+f.name+' ('+Math.round(f.size/1024)+'KB). Processing pipeline next.',false); e.target.value='';};
+    $('genImage').onclick=()=>{const p=String($('imgPrompt').value||'').trim(); if(!p) return; append('assistant','Image panel ready. Prompt captured: '+p+' (image generation backend wiring next).',false);};
+    $('openSettings').onclick=()=>{$('settingsDrawer').style.display='block';};
+    $('closeSettings').onclick=()=>{$('settingsDrawer').style.display='none';};
     $('newChat').onclick=()=>{const c={id:'chat-'+Date.now(),name:'New chat'};state.chats.unshift(c);state.active=c.id;persist();renderChats();loadMessages();$('title').textContent='New chat'};
     $('renameChat').onclick=()=>{const c=state.chats.find(x=>x.id===state.active); if(!c) return; const n=prompt('Rename chat',c.name||''); if(!n) return; c.name=n.slice(0,40); persist(); renderChats(); $('title').textContent=c.name;};
     $('clearChat').onclick=async()=>{if(!confirm('Clear this chat history?')) return; await fetch('/clear-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active})}); await loadMessages();};
