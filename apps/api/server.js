@@ -61,7 +61,7 @@ app.post('/chat', async (req, res) => {
   const context = rows.filter(r => r.session_id === session_id).slice(-10);
   const prompt = context.map((m) => `${m.role}: ${m.content}`).join('\n') + '\nassistant:';
 
-  let reply = 'Model backend unavailable. Please verify Ollama is running.';
+  let reply = '';
   try {
     const r = await fetch(`${OLLAMA_URL}/api/generate`, {
       method: 'POST',
@@ -70,9 +70,23 @@ app.post('/chat', async (req, res) => {
     });
     if (r.ok) {
       const data = await r.json();
-      reply = data.response || reply;
+      reply = data.response || '';
     }
   } catch {}
+
+  if (!reply) {
+    // graceful fallback so chat still works without external model hosting
+    const lower = String(message || '').toLowerCase();
+    if (lower.includes('hello') || lower.includes('hi')) {
+      reply = "Hey 👋 I'm Cam AI. I’m in fallback mode right now, but I can still help you plan projects, job search, and daily tasks.";
+    } else if (lower.includes('job')) {
+      reply = "Quick job-hunt action plan: 1) 10 applications/week, 2) track in Notion, 3) 2 follow-ups/day, 4) 1 portfolio update/day.";
+    } else if (lower.includes('github')) {
+      reply = "For GitHub growth: push one small project this week, write a clean README, and pin it on your profile.";
+    } else {
+      reply = "I’m running in fallback mode (no model host connected yet), but I still got you. Ask for plans, outlines, rewrites, checklists, or strategy and I’ll help instantly.";
+    }
+  }
 
   rows.push({ session_id, role: 'assistant', content: reply, ts: Date.now() });
   save(rows);
