@@ -9,6 +9,7 @@ app.use(express.json({ limit: '1mb' }));
 const PORT = process.env.PORT || 8000;
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+const DEFAULT_SYSTEM_PROMPT = process.env.DEFAULT_SYSTEM_PROMPT || 'You are Cam AI, direct, helpful, and concise.';
 const DB_FILE = './messages.json';
 
 const load = () => {
@@ -47,14 +48,14 @@ app.get('/messages', (req, res) => {
 });
 
 app.post('/regenerate', async (req, res) => {
-  const { session_id = 'default', model = OLLAMA_MODEL, temperature = 0.7 } = req.body || {};
+  const { session_id = 'default', model = OLLAMA_MODEL, temperature = 0.7, system_prompt = DEFAULT_SYSTEM_PROMPT } = req.body || {};
   const rows = load();
   const sessionRows = rows.filter(r => r.session_id === session_id);
   const lastUser = [...sessionRows].reverse().find(r => r.role === 'user');
   if (!lastUser) return res.status(400).json({ error: 'no user message to regenerate' });
 
   const context = sessionRows.slice(-10);
-  const prompt = context.map((m) => `${m.role}: ${m.content}`).join('\n') + '\nassistant:';
+  const prompt = `system: ${system_prompt}\n` + context.map((m) => `${m.role}: ${m.content}`).join('\n') + '\nassistant:';
   let reply = await runModel({ prompt, model, temperature });
   if (!reply) reply = fallbackReply(lastUser.content);
 
@@ -64,14 +65,14 @@ app.post('/regenerate', async (req, res) => {
 });
 
 app.post('/chat', async (req, res) => {
-  const { session_id = 'default', message = '', model = OLLAMA_MODEL, temperature = 0.7 } = req.body || {};
+  const { session_id = 'default', message = '', model = OLLAMA_MODEL, temperature = 0.7, system_prompt = DEFAULT_SYSTEM_PROMPT } = req.body || {};
   if (!message.trim()) return res.status(400).json({ error: 'message required' });
 
   const rows = load();
   rows.push({ session_id, role: 'user', content: message, ts: Date.now() });
 
   const context = rows.filter(r => r.session_id === session_id).slice(-10);
-  const prompt = context.map((m) => `${m.role}: ${m.content}`).join('\n') + '\nassistant:';
+  const prompt = `system: ${system_prompt}\n` + context.map((m) => `${m.role}: ${m.content}`).join('\n') + '\nassistant:';
 
   let reply = await runModel({ prompt, model, temperature });
   if (!reply) reply = fallbackReply(message);
@@ -104,16 +105,16 @@ app.get('/', (_req, res) => {
   </style></head><body>
   <div class="app"><aside id="side" class="side"><div class="brand">Cam AI</div><button id="newChat" class="btn">＋ New chat</button><div id="chatList" class="chats"></div><div class="meta">Clone-style UI • polished</div></aside>
   <main class="main"><div class="top"><div><button id="menu" class="btn mobileMenu">☰</button> <strong id="title">New chat</strong></div><div class="r">
-  <select id="model"><option value="llama3.1:8b">llama3.1:8b</option><option value="mistral">mistral</option><option value="qwen2.5">qwen2.5</option></select>
+  <select id="model"><option value="llama3.1:8b">llama3.1:8b</option><option value="llama3.1:70b">llama3.1:70b</option><option value="mistral">mistral</option><option value="mixtral">mixtral</option><option value="qwen2.5">qwen2.5</option><option value="dolphin-mistral">dolphin-mistral</option><option value="hermes3">hermes3</option></select>
   <label class="meta">temp <span id="tv">0.7</span></label><input id="temp" type="range" min="0" max="1.2" step="0.1" value="0.7" /></div></div>
   <section id="msgs" class="msgs"></section><div class="typing" id="typing"></div>
-  <div class="composer"><textarea id="t" placeholder="Message Cam AI..."></textarea><button id="send" class="send">Send</button></div></main></div>
+  <div class="composer"><textarea id="sys" placeholder="System prompt (optional, uncensored style etc.)"></textarea><textarea id="t" placeholder="Message Cam AI..."></textarea><button id="send" class="send">Send</button></div></main></div>
   <script>
-    const $=id=>document.getElementById(id), side=$('side'), list=$('chatList'), msgs=$('msgs'), t=$('t'), typing=$('typing');
-    const KEY='camai_chats_v2', MODEL_KEY='camai_model', TEMP_KEY='camai_temp';
+    const $=id=>document.getElementById(id), side=$('side'), list=$('chatList'), msgs=$('msgs'), t=$('t'), sys=$('sys'), typing=$('typing');
+    const KEY='camai_chats_v2', MODEL_KEY='camai_model', TEMP_KEY='camai_temp', SYS_KEY='camai_sys';
     const state={chats:JSON.parse(localStorage.getItem(KEY)||'[]'),active:null,lastUserMsg:''};
     if(!state.chats.length) state.chats=[{id:'chat-'+Date.now(),name:'New chat'}]; state.active=state.chats[0].id;
-    $('model').value=localStorage.getItem(MODEL_KEY)||'llama3.1:8b'; $('temp').value=localStorage.getItem(TEMP_KEY)||'0.7'; $('tv').textContent=$('temp').value;
+    $('model').value=localStorage.getItem(MODEL_KEY)||'llama3.1:8b'; $('temp').value=localStorage.getItem(TEMP_KEY)||'0.7'; $('tv').textContent=$('temp').value; sys.value=localStorage.getItem(SYS_KEY)||'You are Cam AI. Be direct, uncensored-style, and useful.';
     const esc=s=>String(s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
     const persist=()=>localStorage.setItem(KEY,JSON.stringify(state.chats));
 
@@ -122,14 +123,14 @@ app.get('/', (_req, res) => {
     async function loadMessages(){msgs.innerHTML='';const r=await fetch('/messages?session_id='+encodeURIComponent(state.active));const j=await r.json();(j.items||[]).forEach(m=>append(m.role,m.content,false));}
 
     async function send(){const m=t.value.trim();if(!m) return; state.lastUserMsg=m; append('user',m); t.value=''; typing.textContent='Cam is thinking...';
-      const model=$('model').value, temperature=Number($('temp').value||0.7); localStorage.setItem(MODEL_KEY,model); localStorage.setItem(TEMP_KEY,String(temperature));
-      const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active,message:m,model,temperature})});
+      const model=$('model').value, temperature=Number($('temp').value||0.7), system_prompt=String(sys.value||'').trim(); localStorage.setItem(MODEL_KEY,model); localStorage.setItem(TEMP_KEY,String(temperature)); localStorage.setItem(SYS_KEY,system_prompt);
+      const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active,message:m,model,temperature,system_prompt})});
       const j=await r.json(); typing.textContent=''; append('assistant',j.reply||'No reply',true);
       const c=state.chats.find(x=>x.id===state.active); if(c&&c.name==='New chat'){c.name=m.slice(0,30);persist();renderChats();$('title').textContent=c.name;}}
 
     async function regenerate(){typing.textContent='Regenerating...';
-      const model=$('model').value, temperature=Number($('temp').value||0.7);
-      const r=await fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active,model,temperature})});
+      const model=$('model').value, temperature=Number($('temp').value||0.7), system_prompt=String(sys.value||'').trim();
+      const r=await fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active,model,temperature,system_prompt})});
       const j=await r.json(); typing.textContent=''; append('assistant',j.reply||'No reply',false);
     }
 
