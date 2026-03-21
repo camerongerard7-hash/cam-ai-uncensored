@@ -111,7 +111,7 @@ app.get('/', (_req, res) => {
     .send{background:var(--accent);border:0;color:#fff;border-radius:12px;padding:0 16px;font-weight:700}.meta{font-size:12px;color:var(--muted)} .mobileMenu{display:none}
     @media (max-width:860px){.side{position:fixed;z-index:5;left:-300px;top:0;bottom:0;transition:.2s}.side.open{left:0}.mobileMenu{display:inline-block}}
   </style></head><body>
-  <div class="app"><aside id="side" class="side"><div class="brand">Cam AI</div><button id="newChat" class="btn">＋ New chat</button><div style="display:flex;gap:8px"><button id="renameChat" class="mini">Rename</button><button id="clearChat" class="mini">Clear</button><button id="exportChat" class="mini">Export</button></div><div id="chatList" class="chats"></div><div class="meta">Clone-style UI • polished</div></aside>
+  <div class="app"><aside id="side" class="side"><div class="brand">Cam AI</div><button id="newChat" class="btn">＋ New chat</button><input id="searchChats" class="btn" placeholder="Search chats..." style="cursor:text" /><div style="display:flex;gap:8px"><button id="renameChat" class="mini">Rename</button><button id="clearChat" class="mini">Clear</button><button id="exportChat" class="mini">Export</button></div><div id="chatList" class="chats"></div><div class="meta">Clone-style UI • polished</div></aside>
   <main class="main"><div class="top"><div><button id="menu" class="btn mobileMenu">☰</button> <strong id="title">New chat</strong></div><div class="r">
   <select id="model"><option value="llama3.1:8b">llama3.1:8b</option><option value="llama3.1:70b">llama3.1:70b</option><option value="mistral">mistral</option><option value="mixtral">mixtral</option><option value="qwen2.5">qwen2.5</option><option value="dolphin-mistral">dolphin-mistral</option><option value="hermes3">hermes3</option></select>
   <label class="meta">temp <span id="tv">0.7</span></label><input id="temp" type="range" min="0" max="1.2" step="0.1" value="0.7" /></div></div>
@@ -123,7 +123,7 @@ app.get('/', (_req, res) => {
   <script>
     const $=id=>document.getElementById(id), side=$('side'), list=$('chatList'), msgs=$('msgs'), t=$('t'), sys=$('sys'), typing=$('typing');
     const KEY='camai_chats_v2', MODEL_KEY='camai_model', TEMP_KEY='camai_temp', SYS_KEY='camai_sys';
-    const state={chats:JSON.parse(localStorage.getItem(KEY)||'[]'),active:null,lastUserMsg:'',mode:'text'};
+    const state={chats:JSON.parse(localStorage.getItem(KEY)||'[]'),active:null,lastUserMsg:'',mode:'text',query:''};
     if(!state.chats.length) state.chats=[{id:'chat-'+Date.now(),name:'New chat'}]; state.active=state.chats[0].id;
     $('model').value=localStorage.getItem(MODEL_KEY)||'llama3.1:8b'; $('temp').value=localStorage.getItem(TEMP_KEY)||'0.7'; $('tv').textContent=$('temp').value; sys.value=localStorage.getItem(SYS_KEY)||'You are Cam AI. Be direct, uncensored-style, and useful.';
     const esc=s=>String(s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
@@ -134,7 +134,7 @@ app.get('/', (_req, res) => {
       .replace(/\n/g,'<br/>');
     const persist=()=>localStorage.setItem(KEY,JSON.stringify(state.chats));
 
-    function renderChats(){list.innerHTML='';state.chats.forEach(c=>{const b=document.createElement('button');b.className='chatItem'+(c.id===state.active?' active':'');b.textContent=c.name;b.onclick=()=>{state.active=c.id;renderChats();loadMessages();$('title').textContent=c.name;side.classList.remove('open')};list.appendChild(b);});}
+    function renderChats(){list.innerHTML='';state.chats.filter(c=>!state.query||String(c.name||'').toLowerCase().includes(state.query)).forEach(c=>{const b=document.createElement('button');b.className='chatItem'+(c.id===state.active?' active':'');b.textContent=c.name;b.onclick=()=>{state.active=c.id;renderChats();loadMessages();$('title').textContent=c.name;side.classList.remove('open')};list.appendChild(b);});}
     function append(role,content,withActions=false){const d=document.createElement('div');d.className='m '+(role==='user'?'u':'a');d.innerHTML=(role==='assistant'?md(content):esc(content)); if(role==='assistant'){const cb=document.createElement('button');cb.className='copyBtn';cb.textContent='Copy';cb.onclick=()=>navigator.clipboard.writeText(String(content||''));d.appendChild(cb);} msgs.appendChild(d); if(withActions){const ra=document.createElement('div');ra.className='rowActions';const regen=document.createElement('button');regen.className='mini';regen.textContent='Regenerate';regen.onclick=regenerate; ra.appendChild(regen); msgs.appendChild(ra);} msgs.scrollTop=msgs.scrollHeight;}
     async function loadMessages(){msgs.innerHTML='';const r=await fetch('/messages?session_id='+encodeURIComponent(state.active));const j=await r.json();(j.items||[]).forEach(m=>append(m.role,m.content,false));}
     async function streamAssistant(text,withActions=true){
@@ -173,6 +173,7 @@ app.get('/', (_req, res) => {
     $('clearChat').onclick=async()=>{if(!confirm('Clear this chat history?')) return; await fetch('/clear-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.active})}); await loadMessages();};
     $('exportChat').onclick=async()=>{const r=await fetch('/messages?session_id='+encodeURIComponent(state.active));const j=await r.json();const txt=(j.items||[]).map(m=>`[${new Date(m.ts||Date.now()).toISOString()}] ${m.role}: ${m.content}`).join('\n\n'); const blob=new Blob([txt],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(state.chats.find(c=>c.id===state.active)?.name||'chat')+'.txt'; a.click();};
     $('temp').oninput=e=>$('tv').textContent=e.target.value; $('menu').onclick=()=>side.classList.toggle('open');
+    $('searchChats').oninput=e=>{state.query=String(e.target.value||'').toLowerCase(); renderChats();};
     $('tabText').onclick=()=>setMode('text'); $('tabImages').onclick=()=>setMode('images'); $('tabCode').onclick=()=>setMode('code'); $('tabCharacters').onclick=()=>setMode('characters');
     renderChats(); loadMessages(); $('title').textContent='New chat'; setMode('text');
   </script>
