@@ -134,6 +134,16 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--fo
 .danger-btn{border:1px solid #c0392b;color:#c0392b;background:transparent;border-radius:8px;padding:12px 18px;font-size:14px;cursor:pointer;font-family:var(--font);transition:background .15s;min-height:44px}
 .danger-btn:hover{background:rgba(192,57,43,.12)}
 
+/* Search toggle */
+.search-toggle{display:inline-flex;align-items:center;gap:5px;background:transparent;border:1px solid var(--bdr);color:#777;font-size:13px;cursor:pointer;padding:4px 10px;border-radius:16px;font-family:var(--font);transition:all .15s}
+.search-toggle:hover{border-color:var(--bdr2);color:#bbb}
+.search-toggle.active{background:#1a3a2a;border-color:#27ae60;color:#27ae60}
+.search-sources{margin-top:10px;padding:10px 14px;background:#1a1a1a;border-radius:8px;border:1px solid var(--bdr)}
+.search-sources-title{color:#888;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.search-source-link{display:block;color:#6ca6e0;font-size:13px;text-decoration:none;padding:3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-source-link:hover{text-decoration:underline;color:#8bbeef}
+.search-badge{display:inline-flex;align-items:center;gap:4px;background:#1a2a1a;border:1px solid #2a4a2a;color:#6a9;font-size:11px;padding:2px 8px;border-radius:10px;margin-bottom:8px}
+
 /* Toast */
 #toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column-reverse;gap:10px;pointer-events:none}
 .toast{background:#262626;color:#fff;border-radius:10px;padding:12px 20px;font-size:14px;box-shadow:0 4px 20px rgba(0,0,0,.6);min-width:220px;max-width:360px;pointer-events:auto;animation:slideIn .3s ease}
@@ -288,6 +298,10 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--fo
           <rect x="3" y="11" width="18" height="11" rx="2"/>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
         </svg>
+        <button class="search-toggle" id="search-toggle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span>Web Search</span>
+        </button>
         <button class="tool-btn" id="create-image-btn">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/><path d="m21 15-5-5L5 21"/></svg>
           <span>Create image</span>
@@ -369,6 +383,7 @@ let conversationHistory = [];
 let activeChat = null;
 let sidebarCollapsed = false;
 let isSending = false;
+let webSearchEnabled = false;
 
 /* ── DOM helpers ── */
 const $ = (id) => document.getElementById(id);
@@ -528,6 +543,58 @@ function saveChat(firstMsg) {
   renderSidebar();
 }
 
+/* ── Private Web Search (DuckDuckGo — no tracking) ── */
+async function webSearch(query) {
+  const encodedQuery = encodeURIComponent(query);
+  const ddgUrl = 'https://html.duckduckgo.com/html/?q=' + encodedQuery;
+  const proxies = [
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(ddgUrl),
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(ddgUrl)
+  ];
+
+  for (const url of proxies) {
+    try {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) continue;
+      const html = await resp.text();
+      return parseDDGResults(html);
+    } catch (e) { continue; }
+  }
+  return [];
+}
+
+function parseDDGResults(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const results = [];
+  const links = doc.querySelectorAll('a.result__a');
+  const snippets = doc.querySelectorAll('a.result__snippet');
+  for (let i = 0; i < Math.min(links.length, 6); i++) {
+    const link = links[i];
+    const snippet = snippets[i];
+    let href = link.getAttribute('href') || '';
+    if (href.startsWith('//duckduckgo.com/l/?uddg=')) {
+      try { href = decodeURIComponent(href.split('uddg=')[1].split('&')[0]); } catch(e) {}
+    }
+    results.push({
+      title: link.textContent.trim(),
+      url: href,
+      snippet: snippet ? snippet.textContent.trim() : ''
+    });
+  }
+  return results;
+}
+
+function formatSearchContext(results) {
+  if (!results.length) return '';
+  let ctx = '\n\nWeb search results:\n';
+  results.forEach((r, i) => {
+    ctx += (i + 1) + '. ' + r.title + '\n   URL: ' + r.url + '\n   ' + r.snippet + '\n';
+  });
+  ctx += '\nUse these search results to provide an accurate, up-to-date answer. Cite sources with their URLs when relevant.';
+  return ctx;
+}
+
 /* ── Send message ── */
 async function sendMessage(text) {
   text = (text || '').trim();
@@ -548,10 +615,18 @@ async function sendMessage(text) {
 
   try {
     const apiKey = apiKeyInput.value.trim() || DEFAULT_KEY;
-    const sysPrompt = sysInput.value.trim() || DEFAULT_SYSTEM;
+    let sysPrompt = sysInput.value.trim() || DEFAULT_SYSTEM;
     const model = modelSelect.value;
     const temp = parseFloat(tempSlider.value);
     const maxTok = parseInt(maxTokensSelect.value, 10);
+
+    let searchResults = [];
+    if (webSearchEnabled) {
+      searchResults = await webSearch(text);
+      if (searchResults.length) {
+        sysPrompt += formatSearchContext(searchResults);
+      }
+    }
 
     const contextMessages = conversationHistory.slice(-MAX_CONTEXT_MESSAGES);
 
@@ -593,7 +668,7 @@ async function sendMessage(text) {
     }
     const reply = data.choices[0].message.content;
     conversationHistory.push({ role: 'assistant', content: reply });
-    addAssistantBubble(reply, true);
+    addAssistantBubble(reply, true, searchResults);
     saveChat(text);
   } catch (err) {
     typingEl.remove();
@@ -627,7 +702,7 @@ function addUserBubble(text, scroll) {
   if (scroll) scrollBottom();
 }
 
-function addAssistantBubble(text, scroll) {
+function addAssistantBubble(text, scroll, searchResults) {
   const w = document.createElement('div');
   w.className = 'ai-msg-wrap';
 
@@ -660,6 +735,22 @@ function addAssistantBubble(text, scroll) {
 
   cr.appendChild(cb);
   cw.appendChild(ct);
+
+  if (searchResults && searchResults.length) {
+    const badge = document.createElement('div');
+    badge.className = 'search-badge';
+    badge.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Web search used';
+    ct.insertBefore(badge, ct.firstChild);
+
+    const src = document.createElement('div');
+    src.className = 'search-sources';
+    src.innerHTML = '<div class="search-sources-title">Sources</div>' +
+      searchResults.slice(0, 4).map(r =>
+        '<a class="search-source-link" href="' + r.url + '" target="_blank" rel="noopener">' + r.title + '</a>'
+      ).join('');
+    cw.appendChild(src);
+  }
+
   cw.appendChild(cr);
   w.appendChild(av);
   w.appendChild(cw);
@@ -792,6 +883,13 @@ $('settings-btn-sb').addEventListener('click', openSettings);
 $('settings-close').addEventListener('click', closeSettings);
 settingsOverlay.addEventListener('click', (e) => {
   if (e.target === settingsOverlay) closeSettings();
+});
+
+// Search toggle
+$('search-toggle').addEventListener('click', () => {
+  webSearchEnabled = !webSearchEnabled;
+  $('search-toggle').classList.toggle('active', webSearchEnabled);
+  showToast(webSearchEnabled ? 'Web search enabled — your searches use DuckDuckGo (private, no tracking)' : 'Web search disabled', 'info');
 });
 
 // "Coming soon" placeholders
