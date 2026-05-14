@@ -1,30 +1,41 @@
 # Cam AI Uncensored
 
-Privacy-first, self-hostable conversational AI for iOS (free-first stack).
+Privacy-first, self-hostable conversational AI (free-first stack).
 
 ## Stack
+- **Web:** Single-file HTML/CSS/JS chat app (no build step, no dependencies)
 - **Mobile:** Expo + React Native
-- **API:** FastAPI (Python)
-- **Model routing:** Ollama local (default), optional cloud fallback
-- **Storage:** SQLite
+- **API:** Express.js backend with Ollama model routing
+- **AI:** Groq API (free tier) for cloud inference, Ollama for local models
+- **Storage:** localStorage (web), JSON file (API)
 
 ## Monorepo
+- `apps/web` – Standalone web chat app (Groq API powered)
 - `apps/mobile` – iOS app
-- `apps/api` – FastAPI backend
-- `packages/shared` – shared types/contracts
+- `apps/api` – Express.js backend
 - `infra` – env and docker helpers
 - `docs` – architecture notes
 
 ## Quick Start
-### 1) API
+
+### Web App (Easiest)
+Just open `apps/web/index.html` in any browser. No install, no build step.
+
+- Real AI responses via Groq (Llama 3.3 70B, Mixtral, Gemma 2)
+- Chat history saved in browser localStorage
+- Customizable system prompt, temperature, max tokens
+- Markdown rendering (code blocks, bold, lists)
+- Mobile responsive with iOS safe area support
+- Dark theme
+
+### API Server
 ```bash
 cd apps/api
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+npm install
+node server.js
 ```
 
-### 2) Mobile
+### Mobile
 ```bash
 cd apps/mobile
 npm install
@@ -33,11 +44,14 @@ npx expo start
 
 Set API URL in `apps/mobile/lib/config.ts`.
 
-## MVP Features
-- Chat UI with streaming-ready API interface
-- `/health` and `/chat` endpoints
-- Local model via Ollama (`llama3.1:8b` default)
-- SQLite chat history
+## Features
+- Chat UI with sidebar, multiple conversations, delete/new chat
+- Model selector (Llama 3.3 70B, Llama 3.1 8B, Mixtral, Gemma 2)
+- Settings panel: API key, system instructions, temperature, max tokens
+- Markdown rendering (code blocks, bold, italic, lists)
+- Copy button on AI responses
+- Mobile responsive with hamburger menu
+- Toast notifications for errors and status
 
 ## Notes
 This is a starter scaffold for educational/self-hosted use. You are responsible for lawful and safe deployment/use.
