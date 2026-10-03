@@ -1,0 +1,38 @@
+name: CamAI APK Pull Request Build Main
+
+on:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      NDK_VERSION: "29.0.14206865"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          java-version: 17
+          distribution: temurin
+      - uses: android-actions/setup-android@v4
+      - name: Install Android toolchain
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;${NDK_VERSION}" "cmake;3.31.6"
+      - name: Fetch pinned llama.cpp
+        run: |
+          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git llama.cpp
+          cd llama.cpp
+          git fetch --depth 1 origin 436f6f89e1e581249900b37a5b8a12a36a6d0912
+          git checkout --detach 436f6f89e1e581249900b37a5b8a12a36a6d0912
+      - name: Build Android app
+        run: cd llama.cpp/examples/llama.android && ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Collect and verify APK
+        run: |
+          mkdir -p dist
+          find llama.cpp/examples/llama.android -type f -name '*.apk' -exec cp {} dist/CamAI-5.4.0-debug.apk \;
+          test -s dist/CamAI-5.4.0-debug.apk
+          sha256sum dist/CamAI-5.4.0-debug.apk | tee dist/SHA256SUM.txt
+      - uses: actions/upload-artifact@v6
+        with:
+          name: CamAI-5.4.0-APK
+          path: dist/
