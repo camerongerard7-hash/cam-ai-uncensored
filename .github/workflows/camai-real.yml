@@ -1,0 +1,91 @@
+name: CamAI Real APK Build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Inspect source package
+        run: |
+          set -euxo pipefail
+          ls -lh camai-source.zip
+          unzip -t camai-source.zip
+          unzip -q camai-source.zip
+          test -d CamAI-Expert-Final/android
+          find CamAI-Expert-Final/android -maxdepth 2 -type f | sort
+
+      - name: Patch pinned llama.cpp fetcher
+        run: |
+          set -euxo pipefail
+          cat > CamAI-Expert-Final/scripts/fetch-llama.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+          DEST="$ROOT/third_party/llama.cpp"
+          REF="${LLAMA_REF:-436f6f89e1e581249900b37a5b8a12a36a6d0912}"
+          mkdir -p "$ROOT/third_party"
+          if [ -d "$DEST/.git" ]; then
+            git -C "$DEST" fetch --depth 1 origin "$REF"
+            git -C "$DEST" reset --hard FETCH_HEAD
+          else
+            git init "$DEST"
+            git -C "$DEST" remote add origin https://github.com/ggml-org/llama.cpp.git
+            git -C "$DEST" fetch --depth 1 origin "$REF"
+            git -C "$DEST" checkout --detach FETCH_HEAD
+          fi
+          COMMIT="$(git -C "$DEST" rev-parse HEAD)"
+          printf '%s
+' "$COMMIT" > "$ROOT/third_party/LLAMA_CPP_COMMIT"
+          printf 'llama.cpp ref: %s
+commit: %s
+' "$REF" "$COMMIT"
+          EOF
+          chmod +x CamAI-Expert-Final/scripts/fetch-llama.sh
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - uses: android-actions/setup-android@v4
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Install Android toolchain
+        run: |
+          set -euxo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865" "cmake;3.31.6"
+
+      - name: Fetch pinned llama.cpp
+        run: |
+          set -euxo pipefail
+          cd CamAI-Expert-Final
+          bash scripts/fetch-llama.sh
+
+      - name: Build CamAI debug APK
+        working-directory: CamAI-Expert-Final/android
+        run: |
+          set -euxo pipefail
+          gradle assembleDebug --stacktrace --no-daemon
+
+      - name: Verify APK
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+          APK=$(find CamAI-Expert-Final/android/app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)
+          test -n "$APK"
+          cp "$APK" dist/CamAI-5.4-debug.apk
+          sha256sum dist/CamAI-5.4-debug.apk | tee dist/SHA256SUM.txt
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: CamAI-5.4-debug
+          path: dist/
