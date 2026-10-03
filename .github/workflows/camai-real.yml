@@ -1,0 +1,45 @@
+name: CamAI Real APK Build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Extract CamAI source package
+        run: |
+          unzip -q camai-source.zip
+          test -d CamAI-Expert-Final/android
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+      - uses: android-actions/setup-android@v4
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+      - name: Install Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - name: Fetch pinned llama.cpp
+        run: |
+          cd CamAI-Expert-Final
+          bash scripts/fetch-llama.sh
+      - name: Build CamAI debug APK
+        working-directory: CamAI-Expert-Final/android
+        run: gradle assembleDebug --stacktrace --no-daemon
+      - name: Verify APK
+        run: |
+          mkdir -p dist
+          APK=$(find CamAI-Expert-Final/android/app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)
+          test -n "$APK"
+          cp "$APK" dist/CamAI-5.4-debug.apk
+          sha256sum dist/CamAI-5.4-debug.apk | tee dist/SHA256SUM.txt
+      - uses: actions/upload-artifact@v6
+        with:
+          name: CamAI-5.4-debug
+          path: dist/
